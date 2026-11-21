@@ -5,7 +5,7 @@ FastAPI + MongoDB Atlas backend for CinePulse Android App.
 
 import os
 from typing import Optional
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient, DESCENDING, ASCENDING
 from dotenv import load_dotenv
@@ -15,7 +15,9 @@ load_dotenv()
 app = FastAPI(
     title="CinePulse API",
     description="High-performance streaming backend powered by Vercel & MongoDB Atlas",
-    version="1.0.0"
+    version="1.0.0",
+    docs_url="/docs",
+    openapi_url="/openapi.json"
 )
 
 # Enable CORS for Android client, Web clients & API testing tools
@@ -36,7 +38,7 @@ def get_collection():
     if not mongo_uri:
         raise HTTPException(
             status_code=500,
-            detail="MONGODB_URI environment variable is not configured."
+            detail="MONGODB_URI environment variable is not configured in Vercel."
         )
     if _mongo_client is None:
         _mongo_client = MongoClient(
@@ -50,6 +52,7 @@ def get_collection():
 
 @app.get("/")
 @app.get("/api")
+@app.get("/health")
 @app.get("/api/health")
 def health():
     try:
@@ -67,6 +70,7 @@ def health():
             "error": str(e)
         }
 
+@app.get("/genres")
 @app.get("/api/genres")
 def get_genres():
     try:
@@ -83,7 +87,9 @@ def get_genres():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/foryou")
 @app.get("/api/foryou")
+@app.get("/home")
 @app.get("/api/home")
 def get_home_feed(page: int = Query(1, ge=1), pageSize: int = Query(20, ge=1, le=100)):
     try:
@@ -92,7 +98,6 @@ def get_home_feed(page: int = Query(1, ge=1), pageSize: int = Query(20, ge=1, le
         cursor = col.find({}, {"_id": 0}).sort("voteCountNum", DESCENDING).skip(skip).limit(pageSize)
         items = list(cursor)
 
-        # Structure home feed into sections
         hero_banners = items[:5] if len(items) >= 5 else items
         trending_rail = items[5:15] if len(items) >= 15 else items
 
@@ -125,6 +130,7 @@ def get_home_feed(page: int = Query(1, ge=1), pageSize: int = Query(20, ge=1, le
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/subjects")
 @app.get("/api/subjects")
 def get_subjects(
     page: int = Query(1, ge=1),
@@ -173,7 +179,9 @@ def get_subjects(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/subjects/search")
 @app.get("/api/subjects/search")
+@app.get("/search")
 @app.get("/api/search")
 def search_subjects(
     q: Optional[str] = None,
@@ -214,7 +222,9 @@ def search_subjects(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/subjects/{subject_id}")
 @app.get("/api/subjects/{subject_id}")
+@app.get("/details")
 @app.get("/api/details")
 def get_subject_detail(subject_id: Optional[str] = None, id: Optional[str] = None):
     sid = subject_id or id
