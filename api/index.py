@@ -865,3 +865,82 @@ def get_recommendations(subject_id: str, limit: int = Query(12, ge=1, le=30)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ---------------------------------------------------------
+# Resilient Catch-All Route Dispatcher for Vercel
+# ---------------------------------------------------------
+@app.api_route("/{full_path:path}", methods=["GET", "POST", "HEAD"])
+def catch_all_dispatcher(full_path: str, request: Request):
+    """
+    Guarantees requests on Vercel never 404 due to path prefix or rewrite differences.
+    """
+    raw_path = (request.url.path or full_path or "").lower()
+    qp = request.query_params
+
+    # 1. Health check & Root
+    if "health" in raw_path or raw_path.strip("/") in ["", "api"]:
+        return health()
+
+    # 2. ForYou / Home Feed
+    if "foryou" in raw_path or "home" in raw_path:
+        page = int(qp.get("page", 1))
+        pageSize = int(qp.get("pageSize", 20))
+        return get_home_feed(page=page, pageSize=pageSize)
+
+    # 3. Genres
+    if "genres" in raw_path:
+        return get_genres()
+
+    # 4. Related / Recommendations
+    if "related" in raw_path or "recommendations" in raw_path:
+        parts = [p for p in raw_path.split("/") if p]
+        sid = ""
+        for i, p in enumerate(parts):
+            if p in ["related", "recommendations"] and i > 0:
+                sid = parts[i - 1]
+                break
+        if not sid:
+            sid = qp.get("subjectId") or qp.get("id") or ""
+        limit = int(qp.get("limit", 12))
+        return get_recommendations(subject_id=sid, limit=limit)
+
+    # 5. Search
+    if "search" in raw_path:
+        return search_subjects(
+            q=qp.get("q"),
+            keyword=qp.get("keyword"),
+            genre=qp.get("genre"),
+            subjectType=int(qp["subjectType"]) if qp.get("subjectType") else None,
+            page=int(qp.get("page", 1)),
+            perPage=int(qp.get("perPage", 20))
+        )
+
+    # 6. Single Subject Details
+    if "details" in raw_path or ("subjects/" in raw_path and not raw_path.endswith("subjects")):
+        parts = [p for p in raw_path.split("/") if p]
+        sid = parts[-1] if parts else ""
+        if sid == "details":
+            sid = qp.get("id") or qp.get("subjectId") or ""
+        return get_subject_detail(subject_id=sid)
+
+    # 7. Subjects Catalog
+    if "subjects" in raw_path:
+        return get_subjects(
+            page=int(qp.get("page", 1)),
+            perPage=int(qp.get("perPage", 20)),
+            genre=qp.get("genre"),
+            subjectType=int(qp["subjectType"]) if qp.get("subjectType") else None,
+            sortBy=qp.get("sortBy", "votes"),
+            order=qp.get("order", "desc")
+        )
+
+    return {
+        "code": 404,
+        "detail": "Not Found",
+        "debug": {
+            "requested_path": raw_path,
+            "full_path": full_path,
+            "url": str(request.url)
+        }
+    }
+
